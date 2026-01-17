@@ -29,227 +29,121 @@ condition: Medical condition
 
 review: Patient review (text)
 
-rating: 10 star rating
+# =========================
+# Patient Condition Classification App
+# =========================
 
-date: Review date
-
-usefulCount: Number of users who found the review helpful
-"""
-
-# Core libraries
+import streamlit as st
 import pandas as pd
 import numpy as np
-
 import re
-import nltk
-nltk.download('stopwords')
-nltk.download('wordnet')
-
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
+import pickle
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 
-"""3. Load Dataset (Colab)"""
+# -------------------------
+# App Title
+# -------------------------
+st.title("Patient Condition Classification Using Drug Reviews")
 
-from google.colab import files
-uploaded = files.upload()
+# -------------------------
+# Load Dataset
+# -------------------------
+@st.cache_data
+def load_data():
+    return pd.read_excel("drugsCom_raw.xlsx")
 
-df = pd.read_excel('drugsCom_raw (1).xlsx')
-df.head()
+df = load_data()
 
-
-
-""" 4. Filter Required Conditions"""
-
-target_conditions = ['Depression', 'High Blood Pressure', 'Diabetes, Type 2']
-df = df[df['condition'].isin(target_conditions)]
-
-df['condition'].value_counts()
-
-
-
-"""5. Data Understanding"""
-
-df.shape
-
-df.info()
-
-df.isnull().sum()
-
-
-
-"""6. Filter Required Conditions"""
-
+# -------------------------
+# Filter Required Conditions
+# -------------------------
 conditions = ['Depression', 'High Blood Pressure', 'Diabetes, Type 2']
 df = df[df['condition'].isin(conditions)]
 
-df['condition'].value_counts()
-
-
-
-"""## Exploratory Data Analysis (EDA)
-7. Condition Distribution
-"""
-
-plt.figure(figsize=(6,4))
-sns.countplot(data=df, x='condition')
-plt.title('Distribution of Patient Conditions')
-plt.xlabel('Condition')
-plt.ylabel('Number of Reviews')
-plt.xticks(rotation=15)
-plt.show()
-
-"""8. Rating Distribution"""
-
-plt.figure(figsize=(6,4))
-plt.hist(df['rating'], bins=10)
-plt.title('Rating Distribution')
-plt.xlabel('Rating')
-plt.ylabel('Frequency')
-plt.show()
-
-
-
-"""9. Review Length Analysis"""
-
-df['review_length'] = df['review'].apply(lambda x: len(str(x).split()))
-
-plt.figure(figsize=(6,4))
-plt.hist(df['review_length'], bins=50)
-plt.title('Review Length Distribution')
-plt.xlabel('Number of Words')
-plt.ylabel('Frequency')
-plt.show()
-
-
-
-"""10. Average Rating per Condition"""
-
-avg_rating = df.groupby('condition')['rating'].mean().reset_index()
-
-plt.figure(figsize=(6,4))
-sns.barplot(data=avg_rating, x='condition', y='rating')
-plt.title('Average Rating per Condition')
-plt.xlabel('Condition')
-plt.ylabel('Average Rating')
-plt.xticks(rotation=15)
-plt.show()
-
-"""11. Useful Count Distribution"""
-
-plt.figure(figsize=(6,4))
-plt.hist(df['usefulCount'], bins=50)
-plt.title('Useful Count Distribution')
-plt.xlabel('Useful Count')
-plt.ylabel('Frequency')
-plt.show()
-
-from PIL import Image
-import matplotlib.pyplot as plt
-
-import matplotlib.pyplot as plt
-from wordcloud import WordCloud
-
-# Join all the cleaned reviews into a single string
-all_reviews = ' '.join(df['clean_review'])
-
-# Generate a word cloud image
-wordcloud = WordCloud(width=800, height=400, background_color='white').generate(all_reviews)
-
-# Display the generated image:
-plt.figure(figsize=(10,5))
-plt.imshow(wordcloud, interpolation='bilinear')
-plt.axis('off')
-plt.title('WordCloud of Patient Drug Reviews')
-plt.show()
-
-"""## Text Preprocessing
-12. Cleaning the Text
-"""
-
-stop_words = set(stopwords.words('english'))
-lemmatizer = WordNetLemmatizer()
-
+# -------------------------
+# Text Cleaning Function (NO NLTK)
+# -------------------------
 def clean_text(text):
-    text = text.lower()
+    text = str(text).lower()
     text = re.sub('[^a-z ]', '', text)
     words = text.split()
-    words = [lemmatizer.lemmatize(w) for w in words if w not in stop_words]
+    words = [w for w in words if w not in ENGLISH_STOP_WORDS]
     return ' '.join(words)
 
 df['clean_review'] = df['review'].apply(clean_text)
-df[['review', 'clean_review']].head()
 
-"""## Feature Engineering & Model Building
-13. Feature and Target Selection
-"""
+# -------------------------
+# EDA Section
+# -------------------------
+st.subheader("Exploratory Data Analysis")
 
+fig1, ax1 = plt.subplots()
+sns.countplot(data=df, x='condition', ax=ax1)
+ax1.set_title("Condition Distribution")
+st.pyplot(fig1)
+
+fig2, ax2 = plt.subplots()
+ax2.hist(df['rating'], bins=10)
+ax2.set_title("Rating Distribution")
+st.pyplot(fig2)
+
+df['review_length'] = df['review'].apply(lambda x: len(str(x).split()))
+fig3, ax3 = plt.subplots()
+ax3.hist(df['review_length'], bins=50)
+ax3.set_title("Review Length Distribution")
+st.pyplot(fig3)
+
+# -------------------------
+# Model Training
+# -------------------------
 X = df['clean_review']
 y = df['condition']
-
-"""14. Train Test Split"""
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-"""15. TF-IDF Vectorization"""
-
 tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2))
-
 X_train_tfidf = tfidf.fit_transform(X_train)
 X_test_tfidf = tfidf.transform(X_test)
-
-"""16. Model Training (Logistic Regression)"""
 
 model = LogisticRegression(max_iter=1000)
 model.fit(X_train_tfidf, y_train)
 
-"""## Model Evaluation
-17. Classification Report
-"""
+# -------------------------
+# Evaluation
+# -------------------------
+st.subheader("Model Evaluation")
 
 y_pred = model.predict(X_test_tfidf)
-print(classification_report(y_test, y_pred))
-
-"""18. Confusion Matrix"""
+st.text(classification_report(y_test, y_pred))
 
 cm = confusion_matrix(y_test, y_pred)
-
-plt.figure(figsize=(6,4))
+fig4, ax4 = plt.subplots()
 sns.heatmap(cm, annot=True, fmt='d',
             xticklabels=conditions,
-            yticklabels=conditions)
-plt.xlabel('Predicted')
-plt.ylabel('Actual')
-plt.show()
+            yticklabels=conditions, ax=ax4)
+ax4.set_xlabel("Predicted")
+ax4.set_ylabel("Actual")
+st.pyplot(fig4)
 
+# -------------------------
+# Prediction Section
+# -------------------------
+st.subheader("Predict Patient Condition")
 
+user_review = st.text_area("Enter patient review:")
 
-"""## Prediction & Deployment Readiness
-19. Predict on New Review
-"""
-
-def predict_condition(review):
-    review = clean_text(review)
-    vector = tfidf.transform([review])
-    return model.predict(vector)[0]
-
-predict_condition("This medicine helped control my sugar levels but caused dizziness")
-
-
-
-"""20. Save Model Files"""
-
-import pickle
-
-pickle.dump(model, open('condition_model.pkl', 'wb'))
-pickle.dump(tfidf, open('tfidf.pkl', 'wb'))
+if st.button("Predict"):
+    cleaned = clean_text(user_review)
+    vector = tfidf.transform([cleaned])
+    prediction = model.predict(vector)[0]
+    st.success(f"Predicted Condition: {prediction}")
 
